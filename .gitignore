@@ -1,3 +1,4 @@
-﻿bin
-obj
 *.user
+*.suo
+/bin
+/obj

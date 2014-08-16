@@ -8,11 +8,15 @@ namespace MysteryGiftConvert {
 	class Program {
 		static void Main( string[] args ) {
 			if ( args.Length < 1 ) {
-				Console.WriteLine( "Usage: MysteryGiftConvert infile.pcd [outfile.myg]" );
+				Console.WriteLine( "Usage Gen 4:" );
+				Console.WriteLine( " MysteryGiftConvert infile.pcd [outfile.myg]" );
+				Console.WriteLine( "Usage Gen 5:" );
+				Console.WriteLine( " MysteryGiftConvert infile.pgf [outfile.bin]" );
 				return;
 			}
 
 			string inFilename = args[0];
+			string outFilename;
 			byte[] file;
 
 			try {
@@ -22,42 +26,56 @@ namespace MysteryGiftConvert {
 				return;
 			}
 
-			if ( file.Length != 856 ) {
-				Console.WriteLine( "Input is not a Generation 4 pcd file!" );
+			if ( file.Length == 856 ) { // Gen 4
+				// to convert a pcd into a wifi-distributable wonder card file,
+				// copy the short description and "header" data from 0x104 to 0x154 to the start of the file
+				var mysteryGift = new MysteryGiftGen4( file );
+				mysteryGift.ShowInfo();
+				outFilename = args.Length >= 2 ? args[1] : mysteryGift.CardID + mysteryGift.ValidGamesShortString + ".myg";
+				using ( var outStream = new FileStream( outFilename, FileMode.Create ) ) {
+					outStream.Write( file, 0x104, 0x50 );
+					outStream.Write( file, 0, file.Length );
+				}
+			} else if ( file.Length == 204 ) { // Gen 5
+				// input is fine as the start of the file, but needs some stuff appended
+
+				var mysteryGift = new MysteryGiftGen5( file );
+				outFilename = args.Length >= 2 ? args[1] : "G" + mysteryGift.CardID.ToString("D4") + ".bin";
+				using ( var outStream = new FileStream( outFilename, FileMode.Create ) ) {
+					outStream.Write( file, 0, file.Length );
+
+					// probably valid versions?
+					outStream.WriteByte( 0x00 );
+					outStream.WriteByte( 0x00 );
+					outStream.WriteByte( 0x30 );
+					outStream.WriteByte( 0x00 );
+
+					// wonder card description on download, is not stored
+					// TODO: Allow custom description
+					string description = "No Description Available.";
+					byte[] descriptionBytes = Encoding.Unicode.GetBytes( description );
+					outStream.Write( descriptionBytes, 0, descriptionBytes.Length );
+					while ( outStream.Length < 0x2CA ) {
+						outStream.WriteByte( 0xFF );
+					}
+
+					// no idea what this is
+					outStream.WriteByte( 0x00 );
+					outStream.WriteByte( 0x20 );
+					outStream.WriteByte( 0x00 );
+					outStream.WriteByte( 0x00 );
+
+					// checksum
+					outStream.Position = 0;
+					byte[] outfile = new byte[outStream.Length];
+					outStream.Read( outfile, 0, outfile.Length );
+					outStream.Position = outStream.Length;
+					outStream.Write( Crc16Ccitt.StandardAlgorithm.ComputeChecksumBytes( outfile ), 0, 2 );
+				}
+			} else {
+				Console.WriteLine( "Input is not a Generation 4 or 5 mystery gift file!" );
 				return;
 			}
-
-			// display some info about the wonder card
-			ushort cardId = BitConverter.ToUInt16( file, 0x150 );
-			Console.WriteLine( "Card ID: " + cardId );
-
-			string validGamesShortString = "";
-			ushort gameBitmask = BitConverter.ToUInt16( file, 0x14C );
-			Console.Write( "This Mystery Gift is valid for:" );
-			if ( ( gameBitmask & 0x0400 ) == 0x0400 ) { Console.Write( " Diamond" ); validGamesShortString += 'd'; } else { validGamesShortString += '_'; }
-			if ( ( gameBitmask & 0x0800 ) == 0x0800 ) { Console.Write( " Pearl" ); validGamesShortString += 'p'; } else { validGamesShortString += '_'; }
-			if ( ( gameBitmask & 0x1000 ) == 0x1000 ) { Console.Write( " Platinum" ); validGamesShortString += 'p'; } else { validGamesShortString += '_'; }
-			if ( ( gameBitmask & 0x0080 ) == 0x0080 ) { Console.Write( " HeartGold" ); validGamesShortString += 'g'; } else { validGamesShortString += '_'; }
-			if ( ( gameBitmask & 0x0100 ) == 0x0100 ) { Console.Write( " SoulSilver" ); validGamesShortString += 's'; } else { validGamesShortString += '_'; }
-			Console.WriteLine();
-			Console.WriteLine();
-
-			// short description displayed on download
-			Console.WriteLine( GetStringGeneration4( file, 0x104, 36 ) );
-
-			// long description on the wonder card
-			Console.WriteLine( GetStringGeneration4( file, 0x154, 250 ) );
-
-			Console.WriteLine();
-
-			// to convert a pcd into a wifi-distributable wonder card file, copy the short description and "header" data from 0x104 to 0x154 to the start of the file
-			string outFilename = args.Length >= 2 ? args[1] : cardId + validGamesShortString + ".myg";
-			var outStream = new FileStream( outFilename, FileMode.Create );
-
-			outStream.Write( file, 0x104, 0x50 );
-			outStream.Write( file, 0, file.Length );
-
-			outStream.Close();
 
 			Console.WriteLine( "Converted " + Path.GetFileName( inFilename ) + " to " + Path.GetFileName( outFilename ) + "!" );
 		}
