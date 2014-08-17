@@ -11,13 +11,55 @@ namespace MysteryGiftConvert {
 				Console.WriteLine( "Usage Gen 4:" );
 				Console.WriteLine( " MysteryGiftConvert infile.pcd [outfile.myg]" );
 				Console.WriteLine( "Usage Gen 5:" );
-				Console.WriteLine( " MysteryGiftConvert infile.pgf [outfile.bin]" );
+				Console.WriteLine( " MysteryGiftConvert [options] infile.pgf [outfile.bin]" );
+				Console.WriteLine( " Options:" );
+				Console.WriteLine( "  --versions bwb2w2       limit which versions gift is valid for" );
+				Console.WriteLine( "  --description desc.txt  get custom wonder card description from a file" );
+				Console.WriteLine( "  --language efigsjk      set target game language (one letter only)" );
 				return;
 			}
 
-			string inFilename = args[0];
-			string outFilename;
+			string inFilename = null;
+			string outFilename = null;
+			string descFilename = null;
+			uint versionsGen5 = 0x00F00000u;
+			byte gameLanguage = 0x02;
 			byte[] file;
+
+			// parse arguments
+			int idx;
+			bool argsDone = false;
+			for ( idx = 0; idx < args.Length; ++idx ) {
+				switch ( args[idx] ) {
+					case "--versions":
+						versionsGen5 = MysteryGiftGen5.GetVersionBitmaskFromString( args[++idx] );
+						break;
+					case "--description":
+						descFilename = args[++idx];
+						break;
+					case "--language":
+						char lang = args[++idx].ToLowerInvariant()[0];
+						switch ( lang ) {
+							case 'e': gameLanguage = 0x02; break;
+							case 'f': gameLanguage = 0x03; break;
+							case 'i': gameLanguage = 0x04; break;
+							case 'g': gameLanguage = 0x05; break;
+							case 's': gameLanguage = 0x07; break;
+							case 'j': gameLanguage = 0x01; break;
+							case 'k': gameLanguage = 0x08; break;
+						}
+						break;
+					default:
+						argsDone = true; // ugly as hell IMO
+						break;
+				}
+				if ( argsDone ) { break; }
+			}
+
+			inFilename = args[idx];
+			if ( idx + 1 < args.Length ) {
+				outFilename = args[idx + 1];
+			}
 
 			try {
 				file = File.ReadAllBytes( inFilename );
@@ -31,37 +73,40 @@ namespace MysteryGiftConvert {
 				// copy the short description and "header" data from 0x104 to 0x154 to the start of the file
 				var mysteryGift = new MysteryGiftGen4( file );
 				mysteryGift.ShowInfo();
-				outFilename = args.Length >= 2 ? args[1] : mysteryGift.CardID + mysteryGift.ValidGamesShortString + ".myg";
+				if ( outFilename == null ) { outFilename = mysteryGift.CardID + mysteryGift.ValidGamesShortString + ".myg"; }
 				using ( var outStream = new FileStream( outFilename, FileMode.Create ) ) {
 					outStream.Write( file, 0x104, 0x50 );
 					outStream.Write( file, 0, file.Length );
 				}
-			} else if ( file.Length == 204 ) { // Gen 5
+			} else if ( file.Length == 204 || file.Length == 720 ) { // Gen 5
 				// input is fine as the start of the file, but needs some stuff appended
 
 				var mysteryGift = new MysteryGiftGen5( file );
-				outFilename = args.Length >= 2 ? args[1] : "G" + mysteryGift.CardID.ToString("D4") + ".bin";
+				if ( outFilename == null ) { outFilename = "G" + mysteryGift.CardID.ToString( "D4" ) + ".bin"; }
 				using ( var outStream = new FileStream( outFilename, FileMode.Create ) ) {
-					outStream.Write( file, 0, file.Length );
+					mysteryGift.ClearDate();
+					outStream.Write( file, 0, 204 );
 
-					// probably valid versions?
-					outStream.WriteByte( 0x00 );
-					outStream.WriteByte( 0x00 );
-					outStream.WriteByte( 0x30 );
-					outStream.WriteByte( 0x00 );
+					// valid versions
+					outStream.WriteByte( (byte)( ( versionsGen5 ) & 0xFF ) );
+					outStream.WriteByte( (byte)( ( versionsGen5 >> 8 ) & 0xFF ) );
+					outStream.WriteByte( (byte)( ( versionsGen5 >> 16 ) & 0xFF ) );
+					outStream.WriteByte( (byte)( ( versionsGen5 >> 24 ) & 0xFF ) );
 
 					// wonder card description on download, is not stored
-					// TODO: Allow custom description
 					string description = "No Description Available.";
+					if ( descFilename != null ) {
+						description = System.IO.File.ReadAllText( descFilename ).Replace( "\r\n", "\xFFFE" ).Replace( "\n", "\xFFFE" );
+					}
 					byte[] descriptionBytes = Encoding.Unicode.GetBytes( description );
 					outStream.Write( descriptionBytes, 0, descriptionBytes.Length );
 					while ( outStream.Length < 0x2CA ) {
 						outStream.WriteByte( 0xFF );
 					}
 
-					// no idea what this is
+					// game language, maybe something else too?
 					outStream.WriteByte( 0x00 );
-					outStream.WriteByte( 0x20 );
+					outStream.WriteByte( gameLanguage );
 					outStream.WriteByte( 0x00 );
 					outStream.WriteByte( 0x00 );
 
