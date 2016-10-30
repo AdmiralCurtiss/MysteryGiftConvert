@@ -43,7 +43,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Crc16Ccitt.cs" />
+    <Compile Include="Checksums\ccitt.cs" />
     <Compile Include="MysteryGiftGen4.cs" />
     <Compile Include="MysteryGiftGen5.cs" />
     <Compile Include="Program.cs" />

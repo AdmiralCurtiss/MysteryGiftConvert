@@ -115,7 +115,8 @@ namespace MysteryGiftConvert {
 					byte[] outfile = new byte[outStream.Length];
 					outStream.Read( outfile, 0, outfile.Length );
 					outStream.Position = outStream.Length;
-					outStream.Write( Crc16Ccitt.StandardAlgorithm.ComputeChecksumBytes( outfile ), 0, 2 );
+					ushort checksum = Checksums.Ccitt.Update( Checksums.Ccitt.Init(), outfile, outfile.LongLength );
+					outStream.Write( BitConverter.GetBytes( checksum ), 0, 2 );
 				}
 			} else {
 				Console.WriteLine( "Input is not a Generation 4 or 5 mystery gift file!" );
