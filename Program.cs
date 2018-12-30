@@ -99,7 +99,11 @@ namespace MysteryGiftConvert {
 						description = System.IO.File.ReadAllText( descFilename ).Replace( "\r\n", "\xFFFE" ).Replace( "\n", "\xFFFE" );
 					}
 					byte[] descriptionBytes = Encoding.Unicode.GetBytes( description );
-					outStream.Write( descriptionBytes, 0, descriptionBytes.Length );
+					int bytecopycount = Math.Min( descriptionBytes.Length, 0x2CA - 0xD0 - 2 );
+					if ( bytecopycount != descriptionBytes.Length ) {
+						Console.WriteLine( "Warning: Description too long." );
+					}
+					outStream.Write( descriptionBytes, 0, bytecopycount );
 					while ( outStream.Length < 0x2CA ) {
 						outStream.WriteByte( 0xFF );
 					}
